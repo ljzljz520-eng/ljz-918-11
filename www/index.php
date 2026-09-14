@@ -38,13 +38,16 @@
                 <h1 class="text-xl font-semibold text-slate-900">系统服务管理</h1>
             </div>
             <div class="text-sm text-slate-500">
-                当前状态: <span class="text-green-600 font-medium">在线</span>
+                当前状态: <span id="header-status" class="text-slate-400 font-medium">自检中...</span>
             </div>
         </div>
     </div>
 
-    <!-- Main Content -->
-    <main class="max-w-6xl mx-auto px-6 py-10">
+    <!-- 目录自检失败提示区（默认隐藏，自检不通过时才显示） -->
+    <div id="selfcheck-panel" class="hidden max-w-6xl mx-auto px-6 py-10"></div>
+
+    <!-- Main Content（默认隐藏，自检通过后才渲染，避免出现一堆不可用按钮） -->
+    <main id="main-content" class="hidden max-w-6xl mx-auto px-6 py-10">
 
         <div class="mb-6 flex justify-between items-end">
             <div>
@@ -68,11 +71,140 @@
 
     <!-- JS Logic -->
     <script>
+        // ---------- 启动流程：先目录自检，再加载业务 ----------
+        async function boot() {
+            document.getElementById('header-status').textContent = '自检中...';
+            try {
+                const res = await fetch('api.php?action=selfcheck');
+                const json = await res.json();
+
+                if (json.status === 'success' && json.data && json.data.ok) {
+                    showMain();
+                    fetchServices();
+                } else {
+                    showSelfcheckFailure(json.data);
+                }
+            } catch (e) {
+                showSelfcheckFailure(null);
+            }
+        }
+
+        function setHeaderStatus(ok) {
+            const el = document.getElementById('header-status');
+            if (ok) {
+                el.textContent = '在线';
+                el.className = 'text-green-600 font-medium';
+            } else {
+                el.textContent = '自检未通过';
+                el.className = 'text-red-600 font-medium';
+            }
+        }
+
+        function showMain() {
+            setHeaderStatus(true);
+            document.getElementById('selfcheck-panel').classList.add('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
+        }
+
+        // ---------- 自检失败：只显示修复指引，不显示任何业务按钮 ----------
+        function showSelfcheckFailure(data) {
+            setHeaderStatus(false);
+            document.getElementById('main-content').classList.add('hidden');
+
+            const panel = document.getElementById('selfcheck-panel');
+            panel.classList.remove('hidden');
+
+            let dirRows = '';
+            let constraintRows = '';
+
+            if (data && Array.isArray(data.dirs)) {
+                data.dirs.forEach(d => {
+                    const badge = d.ok
+                        ? '<span class="text-green-600 font-medium">正常</span>'
+                        : (!d.exists
+                            ? '<span class="text-red-600 font-medium">目录缺失</span>'
+                            : '<span class="text-amber-600 font-medium">不可写</span>');
+                    const suggestion = d.suggestion
+                        ? `<code class="block mt-2 px-3 py-2 bg-slate-900 text-green-300 rounded-lg text-xs font-mono overflow-x-auto">${escapeHtml(d.suggestion)}</code>`
+                        : '';
+                    dirRows += `
+                        <li class="py-3 ${d.ok ? '' : 'bg-red-50/60'} px-4 rounded-lg">
+                            <div class="flex items-center justify-between gap-4 flex-wrap">
+                                <span class="font-mono text-sm font-semibold text-slate-900">${escapeHtml(d.name)}/</span>
+                                <span class="text-xs text-slate-400 font-mono hidden md:inline">${escapeHtml(d.path)}</span>
+                                ${badge}
+                            </div>
+                            ${suggestion}
+                        </li>`;
+                });
+            }
+
+            if (data && Array.isArray(data.constraints)) {
+                data.constraints.forEach(c => {
+                    if (c.ok) return;
+                    constraintRows += `
+                        <li class="py-3 px-4 rounded-lg bg-red-50/60">
+                            <div class="flex items-center justify-between gap-4 flex-wrap">
+                                <span class="text-sm font-medium text-slate-900">${escapeHtml(c.label)}</span>
+                                <span class="text-xs text-red-500 font-mono">${escapeHtml(c.path)}</span>
+                            </div>
+                            <p class="mt-2 text-xs text-slate-500">建议：${escapeHtml(c.suggestion)}</p>
+                        </li>`;
+                });
+            }
+
+            if (!data) {
+                dirRows = '<li class="py-3 px-4 text-sm text-red-600">自检接口请求失败，请确认 PHP 服务已启动。</li>';
+            }
+
+            panel.innerHTML = `
+                <div class="bg-white border border-red-200 rounded-xl shadow-sm overflow-hidden">
+                    <div class="px-6 py-5 border-b border-red-100 bg-red-50 flex items-start gap-3">
+                        <div class="text-2xl leading-none">⚠️</div>
+                        <div>
+                            <h2 class="text-lg font-bold text-red-700">目录结构自检未通过</h2>
+                            <p class="text-sm text-red-500 mt-1">
+                                面板已暂停加载服务功能。请按下述建议在服务器上修复目录后，点击“重新自检”。
+                            </p>
+                        </div>
+                    </div>
+                    <div class="px-6 py-5">
+                        <h3 class="text-sm font-semibold text-slate-700 mb-2">核心目录检查（必须存在且可写）</h3>
+                        <ul class="divide-y divide-slate-100">${dirRows}</ul>
+                        ${constraintRows ? `
+                            <h3 class="text-sm font-semibold text-slate-700 mt-6 mb-2">路径约束检查</h3>
+                            <ul class="divide-y divide-slate-100">${constraintRows}</ul>` : ''}
+                        <div class="mt-6 flex items-center gap-3">
+                            <button onclick="boot()"
+                                class="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
+                                重新自检
+                            </button>
+                            <span class="text-xs text-slate-400">项目根目录：${data ? escapeHtml(data.root) : '未知'}</span>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        // ---------- 业务逻辑 ----------
         async function fetchServices() {
             const grid = document.getElementById('service-grid');
             try {
                 const res = await fetch('api.php?action=list');
                 const json = await res.json();
+
+                // 运行期间目录被破坏：后端返回 503，切回自检失败视图
+                if (res.status === 503) {
+                    showSelfcheckFailure(json.data || null);
+                    return;
+                }
 
                 if (json.status === 'success') {
                     renderServices(json.data);
@@ -128,8 +260,6 @@
         }
 
         async function toggleService(id, targetStatus) {
-            // Optimistic UI update or just wait for reload? 
-            // Better to show loading or wait. I'll simple reload after.
             try {
                 const res = await fetch('api.php', {
                     method: 'POST',
@@ -137,6 +267,12 @@
                     body: JSON.stringify({ action: 'toggle', id, status: targetStatus })
                 });
                 const json = await res.json();
+
+                if (res.status === 503) {
+                    showSelfcheckFailure(json.data || null);
+                    return;
+                }
+
                 if (json.status === 'success') {
                     // Refresh
                     fetchServices();
@@ -148,8 +284,8 @@
             }
         }
 
-        // Init
-        fetchServices();
+        // Init：先自检，通过后才加载服务列表
+        boot();
     </script>
 </body>
 

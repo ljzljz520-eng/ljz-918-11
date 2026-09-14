@@ -1,14 +1,24 @@
 <?php
-require 'db.php';
+require __DIR__ . '/selfcheck.php';
 
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
+/**
+ * 写应用日志（约束：日志只能写进 LOG 目录，越界路径强制回退到 LOG/app.log）
+ */
 function writeAppLog($message)
 {
-    $logFile = getenv('LOG_PATH') ?: '/var/log/app/app.log';
+    $root    = panel_root();
+    $logDir  = $root . '/LOG';
+    $logFile = getenv('LOG_PATH') ?: $logDir . '/app.log';
+
+    if (!is_path_within($logFile, $logDir)) {
+        $logFile = $logDir . '/app.log';
+    }
+
     $timestamp = date('Y-m-d H:i:s');
-    $logEntry = "[$timestamp] $message" . PHP_EOL;
-    // Suppress errors if log file not writable, use stderr as fallback
+    $logEntry  = "[$timestamp] $message" . PHP_EOL;
+    // 日志目录不可写时降级到 stderr，不影响主流程
     if (!@file_put_contents($logFile, $logEntry, FILE_APPEND)) {
         file_put_contents('php://stderr', "AppLog: $message\n");
     }
@@ -16,6 +26,34 @@ function writeAppLog($message)
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
+
+// ---- 目录结构自检接口（不依赖数据库，自检失败时也必须可访问） ----
+if ($method === 'GET' && $action === 'selfcheck') {
+    $result = run_selfcheck();
+    if (!$result['ok']) {
+        http_response_code(503);
+    }
+    echo json_encode([
+        'status' => $result['ok'] ? 'success' : 'error',
+        'data'   => $result,
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// ---- 其余接口一律先过目录自检，失败即拒绝服务（HTTP 503） ----
+$check = run_selfcheck();
+if (!$check['ok']) {
+    http_response_code(503);
+    echo json_encode([
+        'status'  => 'error',
+        'message' => '目录结构自检未通过，请先按页面提示修复目录问题',
+        'data'    => $check,
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// 自检通过后再连接数据库
+require __DIR__ . '/db.php';
 
 if ($method === 'GET' && $action === 'list') {
     try {

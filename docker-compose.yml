@@ -16,7 +16,8 @@ services:
     build: .
     volumes:
       - ./www:/var/www/html
-      - ./LOG:/var/log/app
+      # 项目根目录挂载，供目录结构自检使用（www / data / LOG）
+      - ./:/panel
     networks:
       - service-network
     depends_on:
@@ -26,7 +27,11 @@ services:
       - DB_NAME=service_panel
       - DB_USER=user
       - DB_PASSWORD=userpassword
-      - LOG_PATH=/var/log/app/app.log
+      # 自检根目录：www / data / LOG 均在其下
+      - PANEL_ROOT=/panel
+      # 约束：数据库文件必须放在 data 下，日志只能写进 LOG
+      - DB_DATA_PATH=/panel/data
+      - LOG_PATH=/panel/LOG/app.log
 
   db:
     image: mysql:8.0

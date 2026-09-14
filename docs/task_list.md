@@ -1,0 +1,24 @@
+# 任务清单: PHP 服务管理面板
+
+- [x] 规划与准备
+    - [x] 分析需求与规则
+    - [x] 创建实施方案
+- [x] 环境配置 (Docker)
+    - [x] 创建 PHP `Dockerfile` (安装 pdo_mysql)
+    - [x] 编写 `docker-compose.yml` (Nginx, PHP, MySQL)
+    - [x] 配置 Nginx (`nginx.conf`)
+    - [x] 建立目录结构 (`www`, `data`, `LOG`)
+- [x] 数据库设置
+    - [x] 编写 `init.sql` (架构 + 种子数据)
+    - [x] 验证数据库连接
+- [x] 应用开发
+    - [x] 创建公共数据库连接 (`db.php`)
+    - [x] 实现后端逻辑 (`api.php`) (列表查看、启动、停止)
+    - [x] 实现日志机制
+    - [x] 开发前端界面 (`index.php`) 使用 TailwindCSS
+- [x] 验证与文档
+    - [x] 测试 Docker 启动情况
+    - [x] 测试 UI 交互功能
+    - [x] 验证 `LOG` 文件夹下的日志生成
+    - [x] 构建完整的项目文档体系
+    - [x] 更新项目 README.md

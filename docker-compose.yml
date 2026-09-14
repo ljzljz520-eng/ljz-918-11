@@ -1,0 +1,48 @@
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./www:/var/www/html
+      - ./config/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./LOG/nginx:/var/log/nginx
+    depends_on:
+      - php
+    networks:
+      - service-network
+
+  php:
+    build: .
+    volumes:
+      - ./www:/var/www/html
+      - ./LOG:/var/log/app
+    networks:
+      - service-network
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_NAME=service_panel
+      - DB_USER=user
+      - DB_PASSWORD=userpassword
+      - LOG_PATH=/var/log/app/app.log
+
+  db:
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: service_panel
+      MYSQL_USER: user
+      MYSQL_PASSWORD: userpassword
+    volumes:
+      - ./data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - service-network
+
+networks:
+  service-network:
+    driver: bridge
